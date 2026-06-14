@@ -19,6 +19,17 @@
     --danger: #C8743A;
   }
   *{ box-sizing:border-box; margin:0; padding:0; }
+  html, body{
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+  input{
+    -webkit-user-select: text;
+    user-select: text;
+  }
   body{
     font-family:'Inter', sans-serif;
     background:var(--bg);
@@ -311,9 +322,9 @@
       <div class="np-channel" id="npChannel">—</div>
     </div>
     <div class="np-controls">
-      <div class="icon-btn" id="prevBtn">⏮</div>
-      <div class="icon-btn" id="playPauseBtn">▶</div>
-      <div class="icon-btn" id="nextBtn">⏭</div>
+      <div class="icon-btn" id="prevBtn"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 8 14 2.5v11z"/><path d="M2 8 8 2.5v11z"/></svg></div>
+      <div class="icon-btn" id="playPauseBtn"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M4 2.5v11l10-5.5z"/></svg></div>
+      <div class="icon-btn" id="nextBtn"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 8 2 2.5v11z"/><path d="M14 8 8 2.5v11z"/></svg></div>
     </div>
   </div>
   <div class="np-progress">
@@ -335,6 +346,11 @@
    sebelum deploy ke publik.
    ========================================================= */
 const API_KEY = "AIzaSyC6-nIWdSaJyFiX5r1ss3P6Wz-LU8BJCIs";
+
+/* SVG icons (vector, supaya tidak dirender sebagai emoji warna-warni) */
+const ICON_PLAY = '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M4 2.5v11l10-5.5z"/></svg>';
+const ICON_PAUSE = '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="2" width="3.5" height="12" rx="1"/><rect x="9.5" y="2" width="3.5" height="12" rx="1"/></svg>';
+const ICON_ADD = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 2v12M2 8h12"/></svg>';
 
 let queue = [];      // array of {id, title, channel, thumb}
 let currentIndex = -1;
@@ -364,11 +380,11 @@ function onPlayerStateChange(e){
   const playBtn = document.getElementById('playPauseBtn');
   if(e.data === YT.PlayerState.PLAYING){
     reel.classList.add('spinning');
-    playBtn.textContent = '⏸';
+    playBtn.innerHTML = ICON_PAUSE;
     startProgressLoop();
   } else {
     reel.classList.remove('spinning');
-    playBtn.textContent = '▶';
+    playBtn.innerHTML = ICON_PLAY;
     stopProgressLoop();
   }
   if(e.data === YT.PlayerState.ENDED){
@@ -428,8 +444,8 @@ function renderTrackRow(track){
       <div class="track-channel">${escapeHtml(track.channel)}</div>
     </div>
     <div class="track-actions">
-      <div class="icon-btn" title="Tambah ke antrian">+</div>
-      <div class="icon-btn" title="Putar sekarang">▶</div>
+      <div class="icon-btn" title="Tambah ke antrian">${ICON_ADD}</div>
+      <div class="icon-btn" title="Putar sekarang">${ICON_PLAY}</div>
     </div>
   `;
   const [addBtn, playBtn] = row.querySelectorAll('.icon-btn');
