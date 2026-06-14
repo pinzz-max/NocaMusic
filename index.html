@@ -860,26 +860,25 @@ function buildWordTimings(lyrics){
     const words = line.text.split(/\s+/).filter(w => w.length > 0);
     if(words.length === 0) continue;
 
-    // Estimasi durasi nyanyian realistis berdasarkan suku kata
-    // BUKAN dari gap ke baris berikut — gap bisa sangat panjang karena jeda/instrumen
-    const syllableEst = words.reduce((s, w) => s + Math.max(1, Math.round(w.length / 3)), 0);
-    // ~0.20 detik per suku kata, min 0.4s, max 0.35s per kata (anti-molor)
-    const naturalDur = Math.max(0.4, Math.min(syllableEst * 0.20, words.length * 0.35));
-
-    // Batasi atas: jangan melebihi gap ke baris berikut (kalau baris berikutnya cepat)
-    const nextTime = i + 1 < lyrics.length ? lyrics[i+1].time : line.time + 8;
+    const nextTime = i + 1 < lyrics.length ? lyrics[i+1].time : line.time + 5;
     const gap = nextTime - line.time;
-    // Kata-kata didistribusikan dalam singing window, bukan seluruh gap
-    const singingDur = Math.min(naturalDur, gap * 0.75);
+
+    // Estimasi durasi nyanyian realistis berdasarkan suku kata
+    const syllableEst = words.reduce((s, w) => s + Math.max(1, Math.round(w.length / 3)), 0);
+    const naturalDur = syllableEst * 0.22; // ~0.22s per suku kata
+
+    // singingDur: durasi distribusi kata
+    // - gap normal (baris rapat): pakai gap penuh agar timing ikut nyanyian
+    // - gap sangat panjang (ada jeda/instrumen): potong tail, pakai naturalDur atau 50% gap
+    const singingDur = gap <= naturalDur * 2
+      ? gap
+      : Math.max(naturalDur, gap * 0.5);
 
     const totalChars = words.reduce((s, w) => s + w.length, 0) || 1;
-    // Mulai dari line.time dikurangi pre-roll supaya kata pertama muncul lebih awal
     let t = line.time - WORD_PREROLL;
     words.forEach((word, wi) => {
       wordTimings.push({ time: Math.max(0, t), lineIndex: i, wordIndex: wi });
-      // Distribusi proporsional berdasarkan panjang kata, tapi dibatas per-kata
-      const wordSlot = Math.min((word.length / totalChars) * singingDur, 0.4);
-      t += wordSlot;
+      t += (word.length / totalChars) * singingDur;
     });
   }
 }
