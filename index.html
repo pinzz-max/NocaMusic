@@ -848,20 +848,35 @@ function parseLRC(lrcText){
 // wordTimings: array of { time, lineIndex, wordIndex }
 let wordTimings = [];
 
+// Konstanta pre-roll: highlight datang lebih awal dari timestamp LRC
+// LRC timestamp biasanya nunjuk AWAL baris dinyanyiin, tapi persepsi manusia
+// butuh highlight muncul ~0.1-0.2s SEBELUM kata keluar
+const WORD_PREROLL = 0.18; // detik
+
 function buildWordTimings(lyrics){
   wordTimings = [];
   for(let i = 0; i < lyrics.length; i++){
     const line = lyrics[i];
-    const nextTime = i + 1 < lyrics.length ? lyrics[i+1].time : line.time + 5;
     const words = line.text.split(/\s+/).filter(w => w.length > 0);
     if(words.length === 0) continue;
-    const duration = nextTime - line.time;
-    // distribusi waktu per kata proporsional panjang karakter
+
+    const nextTime = i + 1 < lyrics.length ? lyrics[i+1].time : line.time + 4;
+
+    // Estimasi durasi baris = gap ke baris berikut, tapi dibatasi max
+    // supaya kalau ada jeda panjang, kata terakhir tidak ikut molor
+    const gap = nextTime - line.time;
+    // Asumsi: 1 suku kata ~0.2 detik, hitung suku kata kasar dari panjang kata
+    const syllableEst = words.reduce((s, w) => s + Math.max(1, Math.round(w.length / 3)), 0);
+    const naturalDur = syllableEst * 0.22;
+    // Pakai yang lebih pendek: gap asli atau estimasi natural, min 0.5s
+    const lineDur = Math.min(gap, Math.max(naturalDur, 0.5));
+
     const totalChars = words.reduce((s, w) => s + w.length, 0) || 1;
-    let t = line.time;
+    // Mulai dari line.time dikurangi pre-roll supaya kata pertama muncul lebih awal
+    let t = line.time - WORD_PREROLL;
     words.forEach((word, wi) => {
-      wordTimings.push({ time: t, lineIndex: i, wordIndex: wi });
-      t += (word.length / totalChars) * duration;
+      wordTimings.push({ time: Math.max(0, t), lineIndex: i, wordIndex: wi });
+      t += (word.length / totalChars) * lineDur;
     });
   }
 }
@@ -927,10 +942,11 @@ function updateLyricsHighlight(currentTime){
   const allLines = body.querySelectorAll('.lyrics-line');
   if(allLines.length === 0) return;
 
-  // Cari baris aktif
+  // Cari baris aktif — pakai pre-roll yang sama supaya sinkron dengan kata
+  const LINE_PREROLL = 0.18;
   let activeLineIndex = -1;
   for(let i = 0; i < currentLyrics.length; i++){
-    if(currentLyrics[i].time <= currentTime) activeLineIndex = i;
+    if(currentLyrics[i].time - LINE_PREROLL <= currentTime) activeLineIndex = i;
     else break;
   }
 
