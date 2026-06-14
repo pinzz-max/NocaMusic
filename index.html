@@ -316,26 +316,30 @@
     scroll-behavior: smooth;
   }
   .lyrics-line{
-    font-size:24px;
+    font-size:22px;
     font-weight:700;
     line-height:1.55;
     color: var(--text-muted);
     padding:4px 0;
     margin-bottom:10px;
     opacity: 0.38;
-    transition: opacity 0.35s ease, color 0.35s ease;
+    transform: scale(0.97);
+    transform-origin: left center;
+    transition: opacity 0.35s ease, color 0.35s ease, transform 0.35s ease, font-size 0.35s ease;
     cursor: default;
   }
   .lyrics-line.upcoming{
-    opacity: 0.6;
+    opacity: 0.55;
   }
   .lyrics-line.active{
     opacity: 1;
-    color: var(--text);
+    color: var(--accent);
+    transform: scale(1.0);
+    font-size: 26px;
   }
   .lyrics-line.is-break{
-    font-size: 14px;
-    opacity: 0.25;
+    font-size: 13px;
+    opacity: 0.2;
     letter-spacing: 3px;
   }
 
