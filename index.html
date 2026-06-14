@@ -322,8 +322,23 @@
     transition:color 0.2s;
   }
   .lyrics-line.active{
-    color:var(--accent);
+    color:var(--text);
     font-weight:600;
+  }
+  /* Kata per kata highlight */
+  .lyric-word{
+    display:inline;
+    transition: color 0.15s ease;
+    color: inherit;
+  }
+  .lyrics-line.active .lyric-word{
+    color: var(--text-muted);
+  }
+  .lyrics-line.active .lyric-word.word-sung{
+    color: var(--text);
+  }
+  .lyrics-line.active .lyric-word.word-active{
+    color: var(--accent);
   }
 
   .tape-label{
@@ -731,7 +746,7 @@ async function loadLyrics(track){
 
     if(synced){
       currentLyrics = parseLRC(synced.syncedLyrics);
-      renderLyrics(currentLyrics.map(l => l.text), true);
+      renderLyrics(currentLyrics, true);
     } else if(plain){
       const lines = plain.plainLyrics.split('\n').filter(l => l.trim() !== '');
       renderLyrics(lines, false);
@@ -760,6 +775,27 @@ function parseLRC(lrcText){
   return result;
 }
 
+// wordTimings: array of { time, lineIndex, wordIndex }
+let wordTimings = [];
+
+function buildWordTimings(lyrics){
+  wordTimings = [];
+  for(let i = 0; i < lyrics.length; i++){
+    const line = lyrics[i];
+    const nextTime = i + 1 < lyrics.length ? lyrics[i+1].time : line.time + 5;
+    const words = line.text.split(/\s+/).filter(w => w.length > 0);
+    if(words.length === 0) continue;
+    const duration = nextTime - line.time;
+    // distribusi waktu per kata proporsional panjang karakter
+    const totalChars = words.reduce((s, w) => s + w.length, 0) || 1;
+    let t = line.time;
+    words.forEach((word, wi) => {
+      wordTimings.push({ time: t, lineIndex: i, wordIndex: wi });
+      t += (word.length / totalChars) * duration;
+    });
+  }
+}
+
 function renderLyrics(lines, synced){
   const body = document.getElementById('lyricsBody');
   if(lines.length === 0){
@@ -767,32 +803,91 @@ function renderLyrics(lines, synced){
     return;
   }
   body.innerHTML = '';
-  lines.forEach((line, i) => {
+  lines.forEach((lineObj, i) => {
+    const lineText = typeof lineObj === 'string' ? lineObj : (lineObj.text || '');
     const el = document.createElement('div');
     el.className = 'lyrics-line';
     el.dataset.index = i;
-    el.textContent = line;
+
+    if(synced && lineText && lineText !== '...'){
+      // Pecah jadi span per kata
+      const parts = lineText.split(/(\s+)/);
+      parts.forEach(part => {
+        if(/^\s+$/.test(part)){
+          el.appendChild(document.createTextNode(part));
+        } else {
+          const span = document.createElement('span');
+          span.className = 'lyric-word';
+          span.textContent = part;
+          el.appendChild(span);
+        }
+      });
+    } else {
+      el.textContent = lineText;
+    }
+
     body.appendChild(el);
   });
+
+  if(synced) buildWordTimings(currentLyrics);
 }
+
+let lastActiveWordKey = null;
 
 function updateLyricsHighlight(currentTime){
   if(currentLyrics.length === 0) return;
-  let activeIndex = -1;
-  for(let i = 0; i < currentLyrics.length; i++){
-    if(currentLyrics[i].time <= currentTime) activeIndex = i;
-    else break;
-  }
+
   const body = document.getElementById('lyricsBody');
   const allLines = body.querySelectorAll('.lyrics-line');
+
+  // Cari baris aktif
+  let activeLineIndex = -1;
+  for(let i = 0; i < currentLyrics.length; i++){
+    if(currentLyrics[i].time <= currentTime) activeLineIndex = i;
+    else break;
+  }
+
+  // Highlight baris aktif (warna muted → normal untuk non-aktif)
   allLines.forEach((el, i) => {
-    if(i === activeIndex){
+    if(i === activeLineIndex){
       el.classList.add('active');
       if(document.getElementById('lyricsPanel').classList.contains('open')){
         el.scrollIntoView({ block: 'center', behavior: 'smooth' });
       }
     } else {
       el.classList.remove('active');
+    }
+  });
+
+  // Highlight per kata
+  if(wordTimings.length === 0) return;
+
+  let activeWT = null;
+  for(let i = 0; i < wordTimings.length; i++){
+    if(wordTimings[i].time <= currentTime) activeWT = wordTimings[i];
+    else break;
+  }
+
+  const key = activeWT ? `${activeWT.lineIndex}-${activeWT.wordIndex}` : null;
+  if(key === lastActiveWordKey) return; // tidak perlu re-render
+  lastActiveWordKey = key;
+
+  // Reset semua kata
+  body.querySelectorAll('.lyric-word').forEach(span => {
+    span.classList.remove('word-active', 'word-sung');
+  });
+
+  if(!activeWT) return;
+
+  const activeLine = allLines[activeWT.lineIndex];
+  if(!activeLine) return;
+  const wordSpans = activeLine.querySelectorAll('.lyric-word');
+
+  wordSpans.forEach((span, wi) => {
+    if(wi < activeWT.wordIndex){
+      span.classList.add('word-sung'); // kata yang sudah lewat
+    } else if(wi === activeWT.wordIndex){
+      span.classList.add('word-active'); // kata yang lagi dinyanyiin
     }
   });
 }
