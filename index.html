@@ -284,6 +284,48 @@
 
   #player{ position:absolute; opacity:0; pointer-events:none; width:1px; height:1px; }
 
+  /* ---------- Lyrics panel ---------- */
+  .lyrics-panel{
+    position:fixed;
+    left:0; right:0; bottom:0;
+    height:0;
+    overflow:hidden;
+    background:var(--surface);
+    border-top:1px solid var(--border);
+    transition:height 0.25s ease;
+    z-index:5;
+  }
+  .lyrics-panel.open{ height:60vh; }
+  .lyrics-header{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:14px 16px 8px;
+    border-bottom:1px solid var(--border);
+  }
+  .lyrics-header .section-title{ padding:0; }
+  .lyrics-close{
+    background:none; border:none; color:var(--text-muted);
+    font-size:20px; cursor:pointer; padding:4px;
+  }
+  .lyrics-body{
+    height:calc(60vh - 50px);
+    overflow-y:auto;
+    padding:16px;
+    font-family:'Fraunces', serif;
+  }
+  .lyrics-line{
+    font-size:16px;
+    line-height:1.9;
+    color:var(--text-muted);
+    padding:4px 0;
+    transition:color 0.2s;
+  }
+  .lyrics-line.active{
+    color:var(--accent);
+    font-weight:600;
+  }
+
   .tape-label{
     font-family:'JetBrains Mono', monospace;
     font-size:10px;
@@ -322,6 +364,7 @@
       <div class="np-channel" id="npChannel">—</div>
     </div>
     <div class="np-controls">
+      <div class="icon-btn" id="lyricsBtn" title="Lirik"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 3h10M3 6.5h10M3 10h7M3 13h5"/></svg></div>
       <div class="icon-btn" id="prevBtn"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 8 14 2.5v11z"/><path d="M2 8 8 2.5v11z"/></svg></div>
       <div class="icon-btn" id="playPauseBtn"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M4 2.5v11l10-5.5z"/></svg></div>
       <div class="icon-btn" id="nextBtn"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 8 2 2.5v11z"/><path d="M14 8 8 2.5v11z"/></svg></div>
@@ -333,6 +376,16 @@
     <span class="np-time" id="durTime">0:00</span>
   </div>
   <div class="tape-label">SIDE A · audio-only via YouTube</div>
+</div>
+
+<div class="lyrics-panel" id="lyricsPanel">
+  <div class="lyrics-header">
+    <div class="section-title">Lirik</div>
+    <button class="lyrics-close" id="lyricsClose">×</button>
+  </div>
+  <div class="lyrics-body" id="lyricsBody">
+    <div class="empty-state">Putar lagu untuk melihat lirik.</div>
+  </div>
 </div>
 
 <div id="player"></div>
@@ -533,6 +586,7 @@ function loadTrack(index){
   ytPlayer.playVideo();
   updateNowPlaying(track);
   renderQueue();
+  loadLyrics(track);
 }
 
 function updateNowPlaying(track){
@@ -592,6 +646,7 @@ function startProgressLoop(){
     document.getElementById('durTime').textContent = formatTime(dur);
     const pct = dur > 0 ? (cur/dur)*100 : 0;
     document.getElementById('npBarFill').style.width = pct + '%';
+    updateLyricsHighlight(cur);
   }, 500);
 }
 function stopProgressLoop(){
@@ -619,6 +674,129 @@ function escapeHtml(str){
   div.textContent = str;
   return div.innerHTML;
 }
+
+/* ---------- Lirik (lrclib.net - database lirik terbuka, gratis, tanpa API key) ---------- */
+let currentLyrics = []; // [{time: seconds, text: string}]
+
+document.getElementById('lyricsBtn').addEventListener('click', ()=>{
+  document.getElementById('lyricsPanel').classList.toggle('open');
+});
+document.getElementById('lyricsClose').addEventListener('click', ()=>{
+  document.getElementById('lyricsPanel').classList.remove('open');
+});
+
+// Tebak "artis - judul" dari judul video YouTube, lalu bersihkan embel-embel umum
+function guessArtistTitle(track){
+  let raw = track.title
+    .replace(/\(.*?\)/g, '')
+    .replace(/\[.*?\]/g, '')
+    .replace(/official\s*(music\s*)?video/gi, '')
+    .replace(/official\s*audio/gi, '')
+    .replace(/lyrics?/gi, '')
+    .replace(/lyric\s*video/gi, '')
+    .replace(/HD|HQ|4K/g, '')
+    .trim();
+
+  let artist = track.channel.replace(/VEVO|Official|Music|Records|- Topic/gi, '').trim();
+  let title = raw;
+
+  const parts = raw.split(/-|–|—/);
+  if(parts.length >= 2){
+    artist = parts[0].trim();
+    title = parts.slice(1).join('-').trim();
+  }
+  return { artist, title };
+}
+
+async function loadLyrics(track){
+  currentLyrics = [];
+  const body = document.getElementById('lyricsBody');
+  body.innerHTML = `<div class="empty-state">Mencari lirik...</div>`;
+
+  const { artist, title } = guessArtistTitle(track);
+
+  try{
+    const url = `https://lrclib.net/api/search?q=${encodeURIComponent(artist + ' ' + title)}`;
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if(!Array.isArray(data) || data.length === 0){
+      body.innerHTML = `<div class="empty-state">Lirik tidak ditemukan untuk lagu ini.</div>`;
+      return;
+    }
+
+    // Pilih hasil pertama yang punya lirik tersinkron, kalau tidak ada pakai plain lyrics
+    const synced = data.find(d => d.syncedLyrics);
+    const plain = data.find(d => d.plainLyrics);
+
+    if(synced){
+      currentLyrics = parseLRC(synced.syncedLyrics);
+      renderLyrics(currentLyrics.map(l => l.text), true);
+    } else if(plain){
+      const lines = plain.plainLyrics.split('\n').filter(l => l.trim() !== '');
+      renderLyrics(lines, false);
+    } else {
+      body.innerHTML = `<div class="empty-state">Lirik tidak ditemukan untuk lagu ini.</div>`;
+    }
+  } catch(err){
+    body.innerHTML = `<div class="empty-state">Gagal memuat lirik: ${err.message}</div>`;
+  }
+}
+
+// Parser format LRC: setiap baris diawali [mm:ss.xx]
+function parseLRC(lrcText){
+  const lines = lrcText.split('\n');
+  const result = [];
+  const timeRe = /\[(\d+):(\d+(?:\.\d+)?)\]/;
+  lines.forEach(line => {
+    const match = line.match(timeRe);
+    if(!match) return;
+    const minutes = parseInt(match[1], 10);
+    const seconds = parseFloat(match[2]);
+    const time = minutes * 60 + seconds;
+    const text = line.replace(timeRe, '').trim();
+    result.push({ time, text: text || '...' });
+  });
+  return result;
+}
+
+function renderLyrics(lines, synced){
+  const body = document.getElementById('lyricsBody');
+  if(lines.length === 0){
+    body.innerHTML = `<div class="empty-state">Lirik tidak ditemukan untuk lagu ini.</div>`;
+    return;
+  }
+  body.innerHTML = '';
+  lines.forEach((line, i) => {
+    const el = document.createElement('div');
+    el.className = 'lyrics-line';
+    el.dataset.index = i;
+    el.textContent = line;
+    body.appendChild(el);
+  });
+}
+
+function updateLyricsHighlight(currentTime){
+  if(currentLyrics.length === 0) return;
+  let activeIndex = -1;
+  for(let i = 0; i < currentLyrics.length; i++){
+    if(currentLyrics[i].time <= currentTime) activeIndex = i;
+    else break;
+  }
+  const body = document.getElementById('lyricsBody');
+  const allLines = body.querySelectorAll('.lyrics-line');
+  allLines.forEach((el, i) => {
+    if(i === activeIndex){
+      el.classList.add('active');
+      if(document.getElementById('lyricsPanel').classList.contains('open')){
+        el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }
+    } else {
+      el.classList.remove('active');
+    }
+  });
+}
+
 </script>
 
 </body>
