@@ -826,6 +826,25 @@ function parseLRC(lrcText){
   return result;
 }
 
+function renderLyrics(lines, synced){
+  const body = document.getElementById('lyricsBody');
+  if(lines.length === 0){
+    body.innerHTML = `<div class="empty-state">Lirik tidak ditemukan untuk lagu ini.</div>`;
+    return;
+  }
+  body.innerHTML = '';
+  lines.forEach((lineObj, i) => {
+    const lineText = typeof lineObj === 'string' ? lineObj : (lineObj.text || '');
+    const el = document.createElement('div');
+    el.className = 'lyrics-line';
+    if(lineText === '...') el.classList.add('is-break');
+    el.dataset.index = i;
+    el.textContent = lineText;
+    body.appendChild(el);
+  });
+  lastActiveLineIndex = -1;
+}
+
 let lastActiveLineIndex = -1;
 
 function updateLyricsHighlight(currentTime){
