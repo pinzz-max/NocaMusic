@@ -316,45 +316,27 @@
     scroll-behavior: smooth;
   }
   .lyrics-line{
-    font-size:22px;
+    font-size:24px;
     font-weight:700;
-    line-height:1.5;
-    color:var(--text-muted);
-    padding:6px 0;
-    margin-bottom:6px;
-    opacity:0.35;
-    transform: scale(0.97);
-    transform-origin: left center;
-    transition: opacity 0.4s ease, transform 0.4s ease, filter 0.4s ease;
-    filter: blur(1.5px);
-    will-change: opacity, transform, filter;
+    line-height:1.55;
+    color: var(--text-muted);
+    padding:4px 0;
+    margin-bottom:10px;
+    opacity: 0.38;
+    transition: opacity 0.35s ease, color 0.35s ease;
+    cursor: default;
   }
   .lyrics-line.upcoming{
-    opacity: 0.55;
-    filter: blur(0.5px);
-    transform: scale(0.98);
+    opacity: 0.6;
   }
   .lyrics-line.active{
     opacity: 1;
-    filter: blur(0px);
-    transform: scale(1.03);
     color: var(--text);
   }
-  /* Kata per kata highlight */
-  .lyric-word{
-    display:inline;
-    transition: color 0.12s ease, text-shadow 0.12s ease;
-    color: var(--text-muted);
-  }
-  .lyrics-line.active .lyric-word{
-    color: rgba(244,236,225,0.35);
-  }
-  .lyrics-line.active .lyric-word.word-sung{
-    color: var(--text);
-  }
-  .lyrics-line.active .lyric-word.word-active{
-    color: var(--accent);
-    text-shadow: 0 0 20px rgba(232,163,61,0.6);
+  .lyrics-line.is-break{
+    font-size: 14px;
+    opacity: 0.25;
+    letter-spacing: 3px;
   }
 
   .tape-label{
@@ -791,8 +773,7 @@ async function searchLrclib(artist, title){
 
 async function loadLyrics(track){
   currentLyrics = [];
-  wordTimings = [];
-  lastActiveWordKey = null;
+  lastActiveLineIndex = -1;
   const body = document.getElementById('lyricsBody');
   body.innerHTML = `<div class="empty-state">Mencari lirik...</div>`;
 
@@ -845,97 +826,7 @@ function parseLRC(lrcText){
   return result;
 }
 
-// wordTimings: array of { time, lineIndex, wordIndex }
-let wordTimings = [];
-
-// Konstanta pre-roll: highlight datang lebih awal dari timestamp LRC
-// LRC timestamp biasanya nunjuk AWAL baris dinyanyiin, tapi persepsi manusia
-// butuh highlight muncul ~0.1-0.2s SEBELUM kata keluar
-const WORD_PREROLL = 0.18; // detik
-
-function buildWordTimings(lyrics){
-  wordTimings = [];
-  for(let i = 0; i < lyrics.length; i++){
-    const line = lyrics[i];
-    const words = line.text.split(/\s+/).filter(w => w.length > 0);
-    if(words.length === 0) continue;
-
-    const nextTime = i + 1 < lyrics.length ? lyrics[i+1].time : line.time + 5;
-    const gap = nextTime - line.time;
-
-    // Estimasi durasi nyanyian realistis berdasarkan suku kata
-    const syllableEst = words.reduce((s, w) => s + Math.max(1, Math.round(w.length / 3)), 0);
-    const naturalDur = syllableEst * 0.22; // ~0.22s per suku kata
-
-    // singingDur: durasi distribusi kata
-    // - gap normal (baris rapat): pakai gap penuh agar timing ikut nyanyian
-    // - gap sangat panjang (ada jeda/instrumen): potong tail, pakai naturalDur atau 50% gap
-    const singingDur = gap <= naturalDur * 2
-      ? gap
-      : Math.max(naturalDur, gap * 0.5);
-
-    const totalChars = words.reduce((s, w) => s + w.length, 0) || 1;
-    let t = line.time - WORD_PREROLL;
-    words.forEach((word, wi) => {
-      wordTimings.push({ time: Math.max(0, t), lineIndex: i, wordIndex: wi });
-      t += (word.length / totalChars) * singingDur;
-    });
-  }
-}
-
-function renderLyrics(lines, synced){
-  const body = document.getElementById('lyricsBody');
-  if(lines.length === 0){
-    body.innerHTML = `<div class="empty-state">Lirik tidak ditemukan untuk lagu ini.</div>`;
-    return;
-  }
-  body.innerHTML = '';
-  lines.forEach((lineObj, i) => {
-    const lineText = typeof lineObj === 'string' ? lineObj : (lineObj.text || '');
-    const el = document.createElement('div');
-    el.className = 'lyrics-line';
-    el.dataset.index = i;
-
-    if(synced && lineText && lineText !== '...'){
-      // Pecah jadi span per kata
-      const parts = lineText.split(/(\s+)/);
-      parts.forEach(part => {
-        if(/^\s+$/.test(part)){
-          el.appendChild(document.createTextNode(part));
-        } else {
-          const span = document.createElement('span');
-          span.className = 'lyric-word';
-          span.textContent = part;
-          el.appendChild(span);
-        }
-      });
-    } else {
-      el.textContent = lineText;
-    }
-
-    body.appendChild(el);
-  });
-
-  if(synced){
-    buildWordTimings(currentLyrics);
-    setTimeout(cacheWordSpans, 0); // cache setelah DOM render
-  }
-  lastActiveLineIndex = -1;
-  lastActiveWordIndex = -1;
-}
-
 let lastActiveLineIndex = -1;
-let lastActiveWordIndex = -1;
-// Cache span references per line untuk performa
-let lineWordSpansCache = [];
-
-function cacheWordSpans(){
-  const body = document.getElementById('lyricsBody');
-  lineWordSpansCache = [];
-  body.querySelectorAll('.lyrics-line').forEach(line => {
-    lineWordSpansCache.push(Array.from(line.querySelectorAll('.lyric-word')));
-  });
-}
 
 function updateLyricsHighlight(currentTime){
   if(currentLyrics.length === 0) return;
@@ -944,63 +835,27 @@ function updateLyricsHighlight(currentTime){
   const allLines = body.querySelectorAll('.lyrics-line');
   if(allLines.length === 0) return;
 
-  // Cari baris aktif — pakai pre-roll yang sama supaya sinkron dengan kata
-  const LINE_PREROLL = 0.18;
+  // Cari baris aktif dengan sedikit pre-roll
+  const PREROLL = 0.18;
   let activeLineIndex = -1;
   for(let i = 0; i < currentLyrics.length; i++){
-    if(currentLyrics[i].time - LINE_PREROLL <= currentTime) activeLineIndex = i;
+    if(currentLyrics[i].time - PREROLL <= currentTime) activeLineIndex = i;
     else break;
   }
 
-  // Update kelas baris hanya kalau berubah
-  if(activeLineIndex !== lastActiveLineIndex){
-    allLines.forEach((el, i) => {
-      const dist = i - activeLineIndex;
-      el.classList.remove('active', 'upcoming');
-      if(i === activeLineIndex){
-        el.classList.add('active');
-        if(document.getElementById('lyricsPanel').classList.contains('open')){
-          el.scrollIntoView({ block: 'center', behavior: 'smooth' });
-        }
-      } else if(dist === 1 || dist === 2){
-        el.classList.add('upcoming');
+  if(activeLineIndex === lastActiveLineIndex) return;
+  lastActiveLineIndex = activeLineIndex;
+
+  allLines.forEach((el, i) => {
+    const dist = i - activeLineIndex;
+    el.classList.remove('active', 'upcoming');
+    if(i === activeLineIndex){
+      el.classList.add('active');
+      if(document.getElementById('lyricsPanel').classList.contains('open')){
+        el.scrollIntoView({ block: 'center', behavior: 'smooth' });
       }
-    });
-
-    // Reset highlight kata di baris lama
-    if(lastActiveLineIndex >= 0 && lineWordSpansCache[lastActiveLineIndex]){
-      lineWordSpansCache[lastActiveLineIndex].forEach(s => s.classList.remove('word-active','word-sung'));
-    }
-    lastActiveLineIndex = activeLineIndex;
-    lastActiveWordIndex = -1;
-  }
-
-  // Highlight per kata (hanya di baris aktif)
-  if(wordTimings.length === 0 || activeLineIndex < 0) return;
-
-  let activeWT = null;
-  for(let i = 0; i < wordTimings.length; i++){
-    if(wordTimings[i].lineIndex === activeLineIndex && wordTimings[i].time <= currentTime){
-      activeWT = wordTimings[i];
-    } else if(wordTimings[i].lineIndex > activeLineIndex) break;
-  }
-
-  const activeWordIndex = activeWT ? activeWT.wordIndex : -1;
-  if(activeWordIndex === lastActiveWordIndex) return;
-  lastActiveWordIndex = activeWordIndex;
-
-  const spans = lineWordSpansCache[activeLineIndex];
-  if(!spans) return;
-
-  spans.forEach((span, wi) => {
-    if(wi < activeWordIndex){
-      span.classList.add('word-sung');
-      span.classList.remove('word-active');
-    } else if(wi === activeWordIndex){
-      span.classList.add('word-active');
-      span.classList.remove('word-sung');
-    } else {
-      span.classList.remove('word-active','word-sung');
+    } else if(dist === 1 || dist === 2){
+      el.classList.add('upcoming');
     }
   });
 }
